@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/themes/redmond/jquery-ui.min.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/free-jqgrid/4.15.5/css/ui.jqgrid.min.css">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/free-jqgrid/4.15.5/jquery.jqgrid.min.js"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+	<script src="https://momentjs.com/downloads/moment.js"></script>
+	<script src="send.js"></script>
+	<script src="stats.js"></script>
+	<meta charset="utf-8" />
+	<title>Metric Sample</title>
+</head>
+<body>
+	<script type="text/javascript">
+
+		function get_browser_info(){
+			var ua=navigator.userAgent,tem,M=ua.match(/(opera|chrome|safari|firefox|msie|trident(?=\/))\/?\s*(\d+)/i) || [];
+			if(/trident/i.test(M[1])){
+				tem=/\brv[ :]+(\d+)/g.exec(ua) || [];
+				return {name:'IE ',version:(tem[1]||'')};
+			}
+			if(M[1]==='Chrome'){
+				tem=ua.match(/\bOPR\/(\d+)/)
+				if(tem!=null)   {return {name:'Opera', version:tem[1]};}
+			}
+			M=M[2]? [M[1], M[2]]: [navigator.appName, navigator.appVersion, '-?'];
+			if((tem=ua.match(/version\/(\d+)/i))!=null) {M.splice(1,1,tem[1]);}
+			return {
+				name: M[0],
+				version: M[1]
+			};
+		}
+
+	</script>
+	<div style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+		<h2>All metrics for <label id="current_date"></label></h2>
+		<table id="current"></table>
+	</div>
+
+	<div style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+		<h2>All metrics for period from <label id="date_from"></label> to <label id="date_to"></label></h2>
+		<table id="range"></table>
+	</div>
+
+	<div style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+		<h2>All metrics for user browser: <label id="browser_name"></label></h2>
+		<table id="browser"></table>
+	</div>
+
+	<div style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+		<h2>Load data metric for different platforms:</h2>
+		<table id="platform"></table>
+	</div>
+
+	<script>
+		let counter = new Counter();
+		const browser = get_browser_info();
+
+		counter.init('3C7118CA-EF7C-4A3D-93E2-C9798315A222', String(Math.random()).substr(2, 12), 'send test');
+		counter.setAdditionalParams({
+			env: 'production',
+			browser: browser.name + ' ' + browser.version,
+			platform: navigator.userAgentData.mobile ? 'touch': 'desktop'
+		});
+
+		counter.send('connect', performance.timing.connectEnd - performance.timing.connectStart);
+		counter.send('ttfb', performance.timing.responseEnd - performance.timing.requestStart);
+
+		setTimeout(function() {
+			let timeStart = Date.now();
+
+			const columns = [
+				{ label: 'Action', name: 'action', width: 75, key:true },
+				{ label: 'Hits', name: 'hits', width: 90 },
+				{ label: '25%', name: 'p25', width: 70 },
+				{ label: '50%', name: 'p50', width: 70 },
+				{ label: '75%', name: 'p75', width: 70 },
+				{ label: '95%', name: 'p95', width: 70 }
+			];
+
+			['current', 'range', 'browser', 'platform'].forEach(name => {
+				if (name === 'platform')
+				{
+					columns[0].label = 'Platform';
+				}
+
+				$('#' + name).jqGrid({
+					datatype: 'local',
+					colModel: columns,
+					data: []
+				});
+			});
+
+			counter.send('draw tables', Date.now() - timeStart);
+
+			getData();
+		}, Math.random() * 1000 + 500);
+
+		let getData = function() {
+			let loadStart = Date.now();
+			fetch('https://shri.yandex/hw/stat/data?counterId=3C7118CA-EF7C-4A3D-93E2-C9798315A222')
+				.then(res => res.json())
+				.then(result => {
+					let data = prepareData(result);
+
+					outputCurrentStat(data);
+					outputRangeStat(data);
+					outputBrowserStat(data);
+					outputPlatformStat(data);
+
+				}).finally(counter.send('load data', Date.now() - loadStart));
+		};
+
+		function outputCurrentStat(data)
+		{
+			const currentDate = new Date().toISOString().slice(0, 10);
+			$("#current").jqGrid('setGridParam', { data: calcMetricsByDate(data, 'send test', currentDate)});
+			$("#current").trigger('reloadGrid');
+			$('#current_date').text(currentDate);
+		}
+
+		function outputRangeStat(data)
+		{
+			const currentDate = new Date().toISOString().slice(0, 10);
+
+			const prevDate = new Date();
+			prevDate.setDate(prevDate.getDate() - 1);
+
+			$("#range").jqGrid('setGridParam', { data: calcMetricsByPeriod(data, 'send test', prevDate.toISOString().slice(0, 10), currentDate)});
+			$("#range").trigger('reloadGrid');
+			$('#date_from').text(prevDate.toISOString().slice(0, 10));
+			$('#date_to').text(currentDate);
+		}
+
+		function outputBrowserStat(data)
+		{
+			$("#browser").jqGrid('setGridParam', { data: calcMetricsByBrowser(data, 'send test', browser.name + ' ' + browser.version)});
+			$("#browser").trigger('reloadGrid');
+			$('#browser_name').text(browser.name + ' ' + browser.version);
+		}
+
+		function outputPlatformStat(data)
+		{
+			$("#platform").jqGrid('setGridParam', { data: calcMetricsByPlatforms(data, 'send test', 'load data')});
+			$("#platform").trigger('reloadGrid');
+		}
+	</script>
+</body>
+</html>

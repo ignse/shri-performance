@@ -9,7 +9,7 @@ function quantile(arr, q) {
     } else {
         return Math.floor(sorted[base]);
     }
-};
+}
 
 function prepareData(result) {
 	return result.data.map(item => {
@@ -19,24 +19,29 @@ function prepareData(result) {
 	});
 }
 
-// TODO: реализовать
-// показать значение метрики за несколько день
-function showMetricByPeriod() {
+function addMetricByPeriod(data, page, name, dateFrom, dateTo) {
+	const _dateFrom = +dateFrom.replace(new RegExp('-', 'g'), '');
+	const _dateTo = +dateTo.replace(new RegExp('-', 'g'), '');
+
+	let sampleData = data
+		.filter(item => {
+			const _date = +item.date.replace(new RegExp('-', 'g'), '');
+
+			return item.page == page && item.name == name && _date >= _dateFrom && _date <= _dateTo;
+		})
+		.map(item => item.value);
+
+	let result = {};
+
+	result.hits = sampleData.length;
+	result.p25 = quantile(sampleData, 0.25);
+	result.p50 = quantile(sampleData, 0.5);
+	result.p75 = quantile(sampleData, 0.75);
+	result.p95 = quantile(sampleData, 0.95);
+
+	return result;
 }
 
-// показать сессию пользователя
-function showSession() {
-}
-
-// сравнить метрику в разных срезах
-function compareMetric() {
-}
-
-// любые другие сценарии, которые считаете полезными
-
-
-// Пример
-// добавить метрику за выбранный день
 function addMetricByDate(data, page, name, date) {
 	let sampleData = data
 					.filter(item => item.page == page && item.name == name && item.date == date)
@@ -52,28 +57,94 @@ function addMetricByDate(data, page, name, date) {
 
 	return result;
 }
-// рассчитывает все метрики за день
+
+function addMetricByAdditional(data, page, name, additional_name, additional_value) {
+	let sampleData = data
+		.filter(item => item.page == page && item.name == name && item.additional[additional_name] == additional_value)
+		.map(item => item.value);
+
+	let result = {};
+
+	result.hits = sampleData.length;
+	result.p25 = quantile(sampleData, 0.25);
+	result.p50 = quantile(sampleData, 0.5);
+	result.p75 = quantile(sampleData, 0.75);
+	result.p95 = quantile(sampleData, 0.95);
+
+	return result;
+}
+
+//Метрики по дате
 function calcMetricsByDate(data, page, date) {
 	console.log(`All metrics for ${date}:`);
 
 	let table = {};
 	table.connect = addMetricByDate(data, page, 'connect', date);
 	table.ttfb = addMetricByDate(data, page, 'ttfb', date);
-	table.load = addMetricByDate(data, page, 'load', date);
-	table.square = addMetricByDate(data, page, 'square', date);
-	table.load = addMetricByDate(data, page, 'load', date);
-	table.generate = addMetricByDate(data, page, 'generate', date);
-	table.draw = addMetricByDate(data, page, 'draw', date);
+	table.draw_tables = addMetricByDate(data, page, 'draw tables', date);
+	table.load_data = addMetricByDate(data, page, 'load data', date);
 
 	console.table(table);
-};
 
-fetch('https://shri.yandex/hw/stat/data?counterId=D8F28E50-3339-11EC-9EDF-9F93090795B1')
-	.then(res => res.json())
-	.then(result => {
-		let data = prepareData(result);
+	return [
+		{...table.connect, action: 'connect'},
+		{...table.ttfb, action: 'ttfb'},
+		{...table.draw_tables, action: 'draw tables'},
+		{...table.load_data, action: 'load data'}
+	];
+}
 
-		calcMetricsByDate(data, 'send test', '2021-10-22');
+//Метрики за период
+function calcMetricsByPeriod(data, page, dateFrom, dateTo) {
+	console.log(`All metrics for period from ${dateFrom} to ${dateTo}`);
 
-		// добавить свои сценарии, реализовать функции выше
-	});
+	let table = {};
+	table.connect = addMetricByPeriod(data, page, 'connect', dateFrom, dateTo);
+	table.ttfb = addMetricByPeriod(data, page, 'ttfb', dateFrom, dateTo);
+	table.draw_tables = addMetricByPeriod(data, page, 'draw tables', dateFrom, dateTo);
+	table.load_data = addMetricByPeriod(data, page, 'load data', dateFrom, dateTo);
+
+	console.table(table);
+
+	return [
+		{...table.connect, action: 'connect'},
+		{...table.ttfb, action: 'ttfb'},
+		{...table.draw_tables, action: 'draw tables'},
+		{...table.load_data, action: 'load data'}
+	];
+}
+
+//Метрики текущего пользователя
+function calcMetricsByBrowser(data, page, browser) {
+	console.log(`All metrics for current user browser: ${browser}`);
+
+	let table = {};
+	table.connect = addMetricByAdditional(data, page, 'connect', 'browser', browser);
+	table.ttfb = addMetricByAdditional(data, page, 'ttfb', 'browser', browser);
+	table.draw_tables = addMetricByAdditional(data, page, 'draw tables', 'browser', browser);
+	table.load_data = addMetricByAdditional(data, page, 'load data', 'browser', browser);
+
+	console.table(table);
+
+	return [
+		{...table.connect, action: 'connect'},
+		{...table.ttfb, action: 'ttfb'},
+		{...table.draw_tables, action: 'draw tables'},
+		{...table.load_data, action: 'load data'}
+	];
+}
+//Сравнение метрик
+function calcMetricsByPlatforms(data, page, name) {
+	console.log(`All metrics for current user browser: ${browser}`);
+
+	let table = {};
+	table.touch = addMetricByAdditional(data, page, name, 'platform', 'touch');
+	table.desktop = addMetricByAdditional(data, page, name, 'platform', 'desktop');
+
+	console.table(table);
+
+	return [
+		{...table.touch, action: 'touch'},
+		{...table.desktop, action: 'desktop'}
+	];
+}
